@@ -1,12 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { getSessionToken } from "@/lib/auth/cookies";
 import { verifySession } from "@/lib/auth/jwt";
-import { razorpayConfigured, slotPriceInr } from "@/lib/razorpay";
 import { CopyQrButton } from "./copy-qr";
-import { BillingCard } from "./billing-card";
 import { VerifyEmailNotice } from "./verify-email-notice";
 
 export const dynamic = "force-dynamic";
@@ -99,17 +96,13 @@ export default async function DashboardPage({
     .order("created_at", { ascending: true });
   const locations = (locationRows ?? []) as LocRow[];
 
-  // FR-20 selection: ?loc wins (shareable), then the persisted cookie.
+  // FR-20: the per-location card view follows only the shareable ?loc deep
+  // link (notifications). The persisted dash_loc cookie steers sidebar nav
+  // targets (Reviews/Posts/QR) — it must NOT swap the dashboard overview
+  // table away just because a location was picked in the sidebar dropdown.
   const rawLoc = typeof sp.loc === "string" ? sp.loc : null;
-  const jar = await cookies();
-  const cookieLoc = jar.get("dash_loc")?.value ?? null;
   const owned = new Set(locations.map((l) => l.id));
-  const selectedId =
-    rawLoc && owned.has(rawLoc)
-      ? rawLoc
-      : !rawLoc && cookieLoc && owned.has(cookieLoc)
-        ? cookieLoc
-        : null;
+  const selectedId = rawLoc && owned.has(rawLoc) ? rawLoc : null;
   const selected = selectedId
     ? locations.find((l) => l.id === selectedId) ?? null
     : null;
@@ -120,14 +113,6 @@ export default async function DashboardPage({
   let ratingSum = 0;
   let awaitingReply = 0;
   let pendingApprovals = 0;
-
-  const { data: subRows } = await db
-    .from("subscriptions")
-    .select("status, quantity, current_period_end")
-    .eq("owner_id", claims.sub)
-    .limit(1);
-  const subStatus: string | null = subRows?.[0]?.status ?? null;
-  const subQuantity: number | null = subRows?.[0]?.quantity ?? null;
 
   if (locations.length > 0) {
     for (const l of locations) stats.set(l.id, emptyStats());
@@ -185,14 +170,6 @@ export default async function DashboardPage({
       ) : null}
 
       {!emailVerified ? <VerifyEmailNotice email={ownerEmail} /> : null}
-
-      <BillingCard
-        status={subStatus}
-        quantity={subQuantity}
-        locationCount={locations.length}
-        priceInr={slotPriceInr()}
-        configured={razorpayConfigured()}
-      />
 
       {locations.length === 0 ? (
         <div className="mt-6 rounded-lg border border-dashed border-zinc-300 px-4 py-12 text-center dark:border-zinc-700">
@@ -301,13 +278,14 @@ export default async function DashboardPage({
           </div>
 
           <p className="mt-3 text-sm text-zinc-500">
-            <Link
-              href="/dashboard"
-              prefetch={false}
+            {/* plain anchor: clears any persisted selection (cookie) via the
+                selection API, then lands back on the all-locations table */}
+            <a
+              href="/api/dashboard/selection?loc=all&next=%2Fdashboard"
               className="underline offset-2 hover:text-zinc-800 dark:hover:text-zinc-200"
             >
               ← Back to all locations
-            </Link>
+            </a>
           </p>
         </div>
       ) : (
