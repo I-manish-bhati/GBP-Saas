@@ -240,15 +240,25 @@ export function DashboardChrome({
     locMatch && UUID_RE.test(locMatch[1]) ? (locMatch[1] as string) : null;
   const pathSuffix = locMatch ? (locMatch[2] ?? "") : null;
 
-  // Nav targets: prefer the location whose page is open, then the
-  // persisted selection, then the first location — so the links never
-  // dead-end on /dashboard for multi-location owners.
-  const focus =
-    pathLoc ??
-    selectedId ??
-    (locations.length > 0 ? (locations[0]?.id ?? null) : null);
-  const target = (suffix: string): string =>
-    focus ? `/dashboard/locations/${focus}${suffix}` : "/dashboard";
+  // Nav targets: the location whose page is open, then the persisted
+  // selection; with no selection, multi-location owners get the section's
+  // all-locations view (Reviews/Posts/QR index) so the links match the
+  // switcher's "All locations", and single-location owners get their
+  // location — links never dead-end on /dashboard.
+  const multiLoc = locations.length > 1;
+  const aggregate = (suffix: string): string =>
+    suffix === ""
+      ? "/dashboard/reviews"
+      : suffix === "/posts"
+        ? "/dashboard/posts"
+        : "/dashboard/qr";
+  const target = (suffix: string): string => {
+    const loc = pathLoc ?? selectedId;
+    if (loc) return `/dashboard/locations/${loc}${suffix}`;
+    if (multiLoc) return aggregate(suffix);
+    const first = locations[0]?.id ?? null;
+    return first ? `/dashboard/locations/${first}${suffix}` : "/dashboard";
+  };
   const onLocPage = pathLoc !== null;
 
   const workspace: NavLink[] = [
@@ -256,19 +266,19 @@ export function DashboardChrome({
     {
       label: "Reviews",
       href: target(""),
-      active: onLocPage && pathSuffix === "",
+      active: pathname === "/dashboard/reviews" || (onLocPage && pathSuffix === ""),
       icon: ICONS.Reviews,
     },
     {
       label: "Posts",
       href: target("/posts"),
-      active: onLocPage && pathSuffix === "/posts",
+      active: pathname === "/dashboard/posts" || (onLocPage && pathSuffix === "/posts"),
       icon: ICONS.Posts,
     },
     {
       label: "QR code",
       href: target("/qr"),
-      active: onLocPage && pathSuffix === "/qr",
+      active: pathname === "/dashboard/qr" || (onLocPage && pathSuffix === "/qr"),
       icon: ICONS["QR code"],
     },
   ];

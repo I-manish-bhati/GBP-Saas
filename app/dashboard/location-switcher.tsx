@@ -10,9 +10,11 @@ export interface SwitcherLocation {
  * aside + mobile drawer). Hidden entirely when the owner has a single
  * location (no clutter). A plain GET form navigates to
  * /api/dashboard/selection, which persists the dash_loc cookie and keeps the
- * current section (the URL's location segment is swapped, so
- * Reviews/Posts/QR stay open on the new location); choosing "All locations"
- * from a location page returns to the dashboard.
+ * current section: choosing a location swaps the URL's location segment
+ * (Reviews/Posts/QR stay open on the new location), and choosing
+ * "All locations" from a location page opens that section's all-locations
+ * view (/dashboard/reviews, /dashboard/posts or /dashboard/qr) instead of
+ * dumping the user back on the dashboard table.
  */
 export function LocationSwitcher({
   locations,
@@ -27,12 +29,33 @@ export function LocationSwitcher({
   if (locations.length <= 1) return null;
 
   const match = /^\/dashboard\/locations\/([^/]+)(\/.*)?$/.exec(pathname);
-  const nextFor = (v: string): string =>
-    match === null
-      ? pathname
-      : v === "all"
-        ? "/dashboard"
-        : `/dashboard/locations/${v}${match[2] ?? ""}`;
+  // all-locations section pages carry the same suffix a location page would
+  const aggSuffix =
+    pathname === "/dashboard/reviews"
+      ? ""
+      : pathname === "/dashboard/posts"
+        ? "/posts"
+        : pathname === "/dashboard/qr"
+          ? "/qr"
+          : null;
+  const aggregateFor = (suffix: string): string =>
+    suffix === ""
+      ? "/dashboard/reviews"
+      : suffix === "/posts"
+        ? "/dashboard/posts"
+        : suffix === "/qr"
+          ? "/dashboard/qr"
+          : "/dashboard";
+  const nextFor = (v: string): string => {
+    if (v === "all") {
+      // location page → that section's all-locations view; anywhere else
+      // (aggregate pages, dashboard, profile…) stays put
+      return match !== null ? aggregateFor(match[2] ?? "") : pathname;
+    }
+    if (match !== null) return `/dashboard/locations/${v}${match[2] ?? ""}`;
+    if (aggSuffix !== null) return `/dashboard/locations/${v}${aggSuffix}`;
+    return pathname;
+  };
 
   return (
     <form

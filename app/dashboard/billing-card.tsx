@@ -72,7 +72,9 @@ export function BillingCard({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; err: boolean } | null>(
+    null
+  );
 
   const aiLocations = Math.min(locationCount, quantity ?? 0);
   const chipClass =
@@ -87,7 +89,10 @@ export function BillingCard({
     setMessage(null);
     const res = await postJson("/api/billing/checkout", {});
     if (!res.ok || !res.data) {
-      setMessage(res.error ?? "Could not start checkout.");
+      setMessage({
+        text: res.error ?? "Could not start checkout.",
+        err: true,
+      });
       setBusy(false);
       return;
     }
@@ -96,14 +101,17 @@ export function BillingCard({
 
     const sdkReady = await loadRazorpaySdk();
     if (!sdkReady) {
-      setMessage("Could not load Razorpay checkout. Try again in a moment.");
+      setMessage({
+        text: "Could not load Razorpay checkout. Try again in a moment.",
+        err: true,
+      });
       setBusy(false);
       return;
     }
 
     const RazorpayCtor = window.Razorpay;
     if (!RazorpayCtor) {
-      setMessage("Razorpay checkout unavailable.");
+      setMessage({ text: "Razorpay checkout unavailable.", err: true });
       setBusy(false);
       return;
     }
@@ -122,25 +130,36 @@ export function BillingCard({
         });
         setBusy(false);
         if (confirm.ok) {
-          setMessage("Payment received — AI slots updated.");
+          setMessage({
+            text: "Payment received — AI slots updated.",
+            err: false,
+          });
           router.refresh();
         } else {
-          setMessage(
-            (confirm.error ?? "Payment made, but confirmation failed.") +
-              " It will settle automatically via webhook."
-          );
+          setMessage({
+            text:
+              (confirm.error ?? "Payment made, but confirmation failed.") +
+              " It will settle automatically via webhook.",
+            err: true,
+          });
           router.refresh();
         }
       },
       modal: {
         ondismiss: () => {
           setBusy(false);
-          setMessage("Checkout cancelled — you were not charged.");
+          setMessage({
+            text: "Checkout cancelled — you were not charged.",
+            err: false,
+          });
         },
       },
     });
     rzp.on("payment.failed", () => {
-      setMessage("Payment failed. Please try again or use another card.");
+      setMessage({
+        text: "Payment failed. Please try again or use another card.",
+        err: true,
+      });
     });
     rzp.open();
   }
@@ -193,8 +212,15 @@ export function BillingCard({
         )}
       </div>
       {message ? (
-        <p role="status" className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
-          {message}
+        <p
+          role="status"
+          className={
+            message.err
+              ? "mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:bg-red-950/60 dark:text-red-300"
+              : "mt-2 text-sm text-zinc-700 dark:text-zinc-300"
+          }
+        >
+          {message.text}
         </p>
       ) : null}
       <p className="mt-2 text-xs text-zinc-500">

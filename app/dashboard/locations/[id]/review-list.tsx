@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { patchJson, postJson } from "@/lib/client-api";
@@ -14,6 +15,10 @@ export interface ReviewRow {
   final_reply: string | null;
   replied_at: string | null;
   fetched_at: string;
+  /** aggregate (all-locations) view only: row provenance + pill link */
+  locationId?: string;
+  locationName?: string;
+  locationCity?: string | null;
 }
 
 function Stars({ n }: { n: number }) {
@@ -101,12 +106,22 @@ function ReviewItem({
   return (
     <li className="px-4 py-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Stars n={review.rating} />
           <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
             {review.reviewer_name ?? "Anonymous"}
           </span>
           <Badge status={review.status} />
+          {review.locationName && review.locationId ? (
+            <Link
+              href={`/dashboard/locations/${review.locationId}`}
+              title={`Open ${review.locationName}`}
+              className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            >
+              {review.locationName}
+              {review.locationCity ? ` · ${review.locationCity}` : ""}
+            </Link>
+          ) : null}
         </div>
         <span className="text-xs text-zinc-500">
           {review.fetched_at.slice(0, 10)}
@@ -203,23 +218,36 @@ export function ReviewList({
   reviews,
   canUseAi,
   upgradeHint,
+  gates,
+  emptyText,
 }: {
   reviews: ReviewRow[];
   canUseAi: boolean;
   upgradeHint: string;
+  /** aggregate view: per-location AI-slot gates (keyed by locationId) */
+  gates?: Record<string, { ok: boolean; error: string }>;
+  emptyText?: string;
 }) {
   if (reviews.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500 dark:border-zinc-700">
-        No reviews here yet. Hit “Sync reviews” to pull them from Google.
+        {emptyText ?? "No reviews here yet. Hit “Sync reviews” to pull them from Google."}
       </p>
     );
   }
   return (
     <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-      {reviews.map((r) => (
-        <ReviewItem key={r.id} review={r} canUseAi={canUseAi} upgradeHint={upgradeHint} />
-      ))}
+      {reviews.map((r) => {
+        const g = gates && r.locationId ? gates[r.locationId] : undefined;
+        return (
+          <ReviewItem
+            key={r.id}
+            review={r}
+            canUseAi={g ? g.ok : canUseAi}
+            upgradeHint={g ? g.error : upgradeHint}
+          />
+        );
+      })}
     </ul>
   );
 }

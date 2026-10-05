@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { patchJson, postJson } from "@/lib/client-api";
@@ -13,6 +14,10 @@ export interface PostRow {
   published_at: string | null;
   google_post_id: string | null;
   created_at: string;
+  /** aggregate (all-locations) view only: row provenance + pill link */
+  locationId?: string;
+  locationName?: string;
+  locationCity?: string | null;
 }
 
 const BADGE: Record<PostRow["status"], string> = {
@@ -106,7 +111,7 @@ function PostCard({
       }`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span
             className={`rounded-full px-2 py-0.5 text-xs font-medium ${BADGE[post.status]}`}
           >
@@ -115,6 +120,16 @@ function PostCard({
           <span className="text-xs text-zinc-500">
             {post.created_at.slice(0, 10)}
           </span>
+          {post.locationName && post.locationId ? (
+            <Link
+              href={`/dashboard/locations/${post.locationId}/posts`}
+              title={`Open ${post.locationName}`}
+              className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            >
+              {post.locationName}
+              {post.locationCity ? ` · ${post.locationCity}` : ""}
+            </Link>
+          ) : null}
         </div>
         {post.status === "published" && post.published_at ? (
           <span className="text-xs text-zinc-500">
@@ -229,11 +244,16 @@ export function PostList({
   canUseAi,
   upgradeHint,
   highlightId,
+  gates,
+  emptyText,
 }: {
   posts: PostRow[];
   canUseAi: boolean;
   upgradeHint: string;
   highlightId?: string | null;
+  /** aggregate view: per-location AI-slot gates (keyed by locationId) */
+  gates?: Record<string, { ok: boolean; error: string }>;
+  emptyText?: string;
 }) {
   useEffect(() => {
     if (!highlightId) return;
@@ -248,21 +268,24 @@ export function PostList({
   if (posts.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500 dark:border-zinc-700">
-        No posts yet. Select images and generate one.
+        {emptyText ?? "No posts yet. Select images and generate one."}
       </p>
     );
   }
   return (
     <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-      {posts.map((p) => (
-        <PostCard
-          key={p.id}
-          post={p}
-          canUseAi={canUseAi}
-          upgradeHint={upgradeHint}
-          highlight={p.id === highlightId}
-        />
-      ))}
+      {posts.map((p) => {
+        const g = gates && p.locationId ? gates[p.locationId] : undefined;
+        return (
+          <PostCard
+            key={p.id}
+            post={p}
+            canUseAi={g ? g.ok : canUseAi}
+            upgradeHint={g ? g.error : upgradeHint}
+            highlight={p.id === highlightId}
+          />
+        );
+      })}
     </ul>
   );
 }
