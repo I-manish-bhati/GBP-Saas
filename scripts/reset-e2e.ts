@@ -1,7 +1,8 @@
 /* Reset end-to-end test state before `npx playwright test`:
  *   npx tsx scripts/reset-e2e.ts
- * Clears FR-32 daily review_submissions for the e2e test customers and marks
- * all notifications unread (M10 bell-badge assertions). */
+ * Clears FR-32 daily review_submissions for the e2e test customers and
+ * rebuilds the M10 notification fixtures deterministically (exactly 4 rows,
+ * past created_at so the bell shows "ago", reference ids that deep-link). */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
@@ -38,12 +39,6 @@ async function main(): Promise<void> {
     if (error) throw new Error(error.message);
   }
 
-  const { error: nErr } = await db
-    .from("notifications")
-    .update({ read_at: null })
-    .not("read_at", "is", null);
-  if (nErr) throw new Error(nErr.message);
-
   // Billing-page history fixtures (paid + failed attempt for the owner account).
   const { data: owners, error: oErr } = await db
     .from("owners")
@@ -53,6 +48,71 @@ async function main(): Promise<void> {
   if (oErr) throw new Error(oErr.message);
   const ownerId = owners?.[0]?.id;
   if (ownerId) {
+    // M10 bell fixtures: rebuild from scratch so counts/links never drift
+    // (other scripts and cascade deletes mutate these between runs).
+    const { error: dErr } = await db
+      .from("notifications")
+      .delete()
+      .eq("owner_id", ownerId);
+    if (dErr) throw new Error(dErr.message);
+
+    // post_ready/post_failed deep links resolve the location via the post row.
+    const { data: locs, error: lErr } = await db
+      .from("locations")
+      .select("id")
+      .eq("owner_id", ownerId)
+      .order("created_at")
+      .limit(1);
+    if (lErr) throw new Error(lErr.message);
+    const locId = locs?.[0]?.id ?? null;
+
+    let postId: string | null = null;
+    if (locId) {
+      const { data: posts, error: qErr } = await db
+        .from("posts")
+        .select("id")
+        .eq("location_id", locId)
+        .limit(1);
+      if (qErr) throw new Error(qErr.message);
+      postId = posts?.[0]?.id ?? null;
+      if (!postId) {
+        const { data: created, error: cErr } = await db
+          .from("posts")
+          .insert({
+            location_id: locId,
+            status: "awaiting_approval",
+            ai_generated_text:
+              "Fixture post for e2e tests: visit us today for a warm welcome and great service.",
+            final_text:
+              "Fixture post for e2e tests: visit us today for a warm welcome and great service.",
+            auto_publish_at: null,
+          })
+          .select("id")
+          .single();
+        if (cErr) throw new Error(cErr.message);
+        postId = created.id;
+      }
+    }
+
+    const hoursAgo = (h: number): string =>
+      new Date(Date.now() - h * 3_600_000).toISOString();
+    const fixtures = [
+      { type: "post_failed", reference_id: postId, created_at: hoursAgo(2) },
+      { type: "post_ready", reference_id: postId, created_at: hoursAgo(4) },
+      { type: "token_expired", reference_id: locId, created_at: hoursAgo(6) },
+      { type: "payment_failed", reference_id: null, created_at: hoursAgo(8) },
+    ].filter((f) => f.reference_id !== null || f.type === "payment_failed");
+    const { error: iErr } = await db.from("notifications").insert(
+      fixtures.map((f) => ({
+        owner_id: ownerId,
+        type: f.type,
+        reference_id: f.reference_id,
+        created_at: f.created_at,
+        read_at: null,
+      }))
+    );
+    if (iErr) throw new Error(iErr.message);
+
     const { error: pErr } = await db.from("payments").upsert(
       [
         {
@@ -84,7 +144,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `E2E reset: ${ids.length} customer(s) submissions cleared, notifications unread, billing fixtures ready.`
+    `E2E reset: ${ids.length} customer(s) submissions cleared, 4 notification fixtures rebuilt, billing fixtures ready.`
   );
 }
 main().catch((e) => {

@@ -60,19 +60,30 @@ export function NotificationsBell() {
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/notifications")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("load failed"))))
-      .then((data: { notifications: Notif[]; unread: number }) => {
-        if (!alive) return;
-        setItems(data.notifications);
-        setUnread(data.unread);
-        setError(null);
-      })
-      .catch(() => {
-        if (alive) setError("Could not load notifications.");
-      });
+    let attempt = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const load = (): void => {
+      fetch("/api/notifications")
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error("load failed"))))
+        .then((data: { notifications: Notif[]; unread: number }) => {
+          if (!alive) return;
+          setItems(data.notifications);
+          setUnread(data.unread);
+          setError(null);
+        })
+        .catch(() => {
+          // Transient failures happen (dev HMR cancels in-flight requests);
+          // retry with backoff so the badge is not stuck at zero.
+          if (!alive) return;
+          attempt += 1;
+          if (attempt <= 3) timer = setTimeout(load, 750 * attempt);
+          else setError("Could not load notifications.");
+        });
+    };
+    load();
     return () => {
       alive = false;
+      if (timer) clearTimeout(timer);
     };
   }, []);
 

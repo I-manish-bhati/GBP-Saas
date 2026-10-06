@@ -28,6 +28,14 @@ function getRedis(): Redis | null {
 
 const limiters = new Map<string, Ratelimit>();
 
+// Dev/test multiplier so the E2E suite (30+ logins per run) isn't throttled by the
+// production limits (auth:login:ip = 10/15m). FORCED to 1 when NODE_ENV=production.
+const SCALE = ((): number => {
+  const raw = Number.parseInt(process.env.RATE_LIMIT_SCALE ?? "", 10);
+  const scale = Number.isFinite(raw) && raw > 0 && raw <= 10_000 ? raw : 1;
+  return process.env.NODE_ENV === "production" ? 1 : scale;
+})();
+
 function getLimiter(bucket: string, limit: number, windowMs: number): Ratelimit | null {
   const existing = limiters.get(bucket);
   if (existing) return existing;
@@ -49,7 +57,8 @@ export async function rateLimit(opts: {
   limit: number;
   windowMs: number;
 }): Promise<RateLimitResult> {
-  const limiter = getLimiter(opts.bucket, opts.limit, opts.windowMs);
+  if (SCALE !== 1) warnOnce(`RATE_LIMIT_SCALE=${SCALE} active (dev/test only; production forces 1)`);
+  const limiter = getLimiter(opts.bucket, opts.limit * SCALE, opts.windowMs);
   if (!limiter) {
     return { success: true, limit: opts.limit, remaining: opts.limit, retryAfterMs: null };
   }

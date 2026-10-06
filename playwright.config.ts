@@ -19,7 +19,13 @@ function projects() {
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  timeout: 60_000,
+  // Cold dev-server runs back-to-back across 8 routes + WebKit slowness can
+  // push a full pass well past the old 60s cap (observed whack-a-mole fails).
+  timeout: 120_000,
+  expect: {
+    // Dev-server first compiles and slow fetches (bell retry) exceed the 5s default.
+    timeout: 15_000,
+  },
   retries: 0,
   workers: 1,
   reporter: [["list"]],
