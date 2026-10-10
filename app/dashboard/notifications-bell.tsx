@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { postJson } from "@/lib/client-api";
+import { deleteJson, postJson } from "@/lib/client-api";
 
 interface Notif {
   id: string;
@@ -133,6 +133,23 @@ export function NotificationsBell() {
     }
   }
 
+  async function dismiss(n: Notif): Promise<void> {
+    setItems((prev) => (prev ? prev.filter((x) => x.id !== n.id) : prev));
+    if (!n.read_at) setUnread((u) => Math.max(0, u - 1));
+    const res = await deleteJson(`/api/notifications/${n.id}`);
+    if (!res.ok) {
+      // put it back (in date order) so a failed dismiss is not silently lost
+      setItems((prev) =>
+        prev
+          ? [...prev, n].sort((a, b) =>
+              b.created_at.localeCompare(a.created_at)
+            )
+          : prev
+      );
+      if (!n.read_at) setUnread((u) => u + 1);
+    }
+  }
+
   return (
     <div ref={rootRef} className="relative">
       <button
@@ -201,14 +218,14 @@ export function NotificationsBell() {
               {items.map((n) => {
                 const unreadItem = n.read_at === null;
                 return (
-                  <li key={n.id}>
+                  <li key={n.id} className="relative">
                     <Link
                       href={hrefFor(n)}
                       onClick={() => {
                         void markOne(n);
                         setOpen(false);
                       }}
-                      className={`flex min-h-14 items-start gap-3 px-4 py-3 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 ${
+                      className={`flex min-h-14 items-start gap-3 py-3 pl-4 pr-10 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 ${
                         unreadItem
                           ? "bg-blue-50/60 dark:bg-blue-950/30"
                           : ""
@@ -232,6 +249,26 @@ export function NotificationsBell() {
                         />
                       ) : null}
                     </Link>
+                    <button
+                      type="button"
+                      aria-label={`Dismiss: ${LABELS[n.type] ?? n.type}`}
+                      title="Dismiss"
+                      onClick={() => void dismiss(n)}
+                      className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="14"
+                        height="14"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
                   </li>
                 );
               })}
